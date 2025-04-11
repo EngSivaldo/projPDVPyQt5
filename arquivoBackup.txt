@@ -1,0 +1,38 @@
+✅ Função backup_banco():
+Cria a pasta backups se não existir.
+
+Cria um único arquivo de backup por dia, com a data no nome.
+
+Só faz backup se o arquivo do dia ainda não existir (evita repetição).
+
+Chama a função limpar_backups_antigos() automaticamente no final.
+
+✅ Função limpar_backups_antigos():
+Verifica se a pasta backups existe.
+
+Remove backups mais antigos que 7 dias.
+
+Mostra no terminal os arquivos removidos com um emoji de lixeira 🗑️
+
+✅ Execução automática ao iniciar:
+Você colocou corretamente no __init__() da janela principal:
+
+python
+Copiar
+Editar
+backup_banco()
+Isso significa que toda vez que o sistema abre, o backup é feito (caso ainda não tenha sido feito hoje), e os antigos são limpos.
+
+✅ Resultado:
+Organização: sem poluição de arquivos desnecessários.
+
+Segurança: backups diários garantidos.
+
+Praticidade: tudo automático, o usuário não precisa fazer nada.
+
+Se quiser deixar ainda melhor futuramente:
+
+Mostrar uma notificação no sistema (QMessageBox ou status bar) quando o backup for criado ou pulado.
+
+Permitir configurar o número de dias de retenção dos backups nas configurações.
+

@@ -1,0 +1,24 @@
+
+
+✅ Etapas para criar o Instalador Profissional com Inno Setup
+🔹 1. Compilar seu sistema para .exe com PyInstaller
+Vamos transformar seu sistema Python (ex: main.py ou splash.py) em um executável real .exe.
+
+🔹 2. Criar um arquivo .ico para o atalho e instalador
+O instalador e o atalho da área de trabalho terão um ícone bonito e personalizado.
+
+🔹 3. Criar o script do Inno Setup (.iss)
+Esse script vai montar a instalação toda:
+
+Instalar o sistema em C:\Program Files (x86)\SYSONPDV (por exemplo)
+
+Criar atalho com ícone
+
+Copiar banco de dados
+
+Instalar pasta imagens/, backup/, etc
+
+Criar entrada no menu iniciar
+
+🔹 4. Compilar o instalador com o Inno Setup Compiler
+Você clica e gera o .exe do instalador completo.
