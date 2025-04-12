@@ -43,10 +43,7 @@ def backup_banco():
     else:
         print("📁 Backup já existe para hoje.")
 
-    limpar_backups_antigos()  # <-- Aqui ele chama a função que remove backups antigos
-
-
-# Limpa backups com mais de 7 dias de idade
+#   # Limpa backups com mais de 7 dias de idade
 def limpar_backups_antigos(dias=7):
     pasta_backup = os.path.join(os.path.dirname(__file__), "backups")
     if not os.path.exists(pasta_backup):
@@ -62,13 +59,13 @@ def limpar_backups_antigos(dias=7):
                 print(f"🗑️ Backup antigo removido: {nome}")
 
 
-
-
 class GradientBackground(QWidget):
     def __init__(self):
         super().__init__()
         self.setAutoFillBackground(True)
-      
+           # Cria backup do banco logo na inicialização do sistema
+        backup_banco()
+
     def paintEvent(self, event):
         painter = QPainter(self)
         gradient = QBrush(QColor(15, 108, 191), Qt.SolidPattern)
@@ -77,8 +74,6 @@ class GradientBackground(QWidget):
 class MainPDVWindow(QMainWindow):
     def __init__(self, versao_teste=False, usuario_logado="Usuário", codigo_usuario="000"):
         super().__init__()
-         # Gera o backup ao abrir o sistema
-        backup_banco()
         self.versao_teste = versao_teste
         self.usuario_logado = usuario_logado
         self.codigo_usuario = codigo_usuario

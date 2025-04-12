@@ -2,7 +2,7 @@ import sqlite3
 from PyQt5.QtWidgets import (
     QDialog, QLabel, QLineEdit, QPushButton, QComboBox,
     QHBoxLayout, QVBoxLayout, QGridLayout, QFileDialog, QMessageBox,
-    QTableWidget, QTableWidgetItem
+    QTableWidget, QTableWidgetItem, QInputDialog,  QSizePolicy, QHeaderView
 )
 from PyQt5.QtGui import QPixmap
 from PyQt5.QtCore import Qt
@@ -17,6 +17,30 @@ class CadastroProdutoWindow(QDialog):
         self.setFixedSize(950, 700)
         self.initUI()
         self.carregar_tabela()
+       
+        
+    def editar_estoque(self, row, column):
+        if column != 2:
+            return  # Só permite editar o estoque (coluna 2)
+
+        descricao = self.tabela_produtos.item(row, 1).text()  # Coluna 1 = Descrição
+
+        novo_estoque, ok = QInputDialog.getInt(self, "Editar Estoque",
+                                            f"Novo estoque para '{descricao}':", min=0)
+        if ok:
+            try:
+                conexao = sqlite3.connect("banco_dados.db")
+                cursor = conexao.cursor()
+                cursor.execute("UPDATE produtos SET estoque = ? WHERE descricao = ?", (novo_estoque, descricao))
+                conexao.commit()
+                conexao.close()
+
+                QMessageBox.information(self, "Estoque Atualizado", f"Estoque de '{descricao}' atualizado com sucesso!")
+                self.carregar_tabela()
+                
+            except Exception as e:
+                QMessageBox.critical(self, "Erro", f"Erro ao atualizar o estoque: {str(e)}")
+
 
     def initUI(self):
         layout = QVBoxLayout()
@@ -66,15 +90,23 @@ class CadastroProdutoWindow(QDialog):
         self.btn_novo = QPushButton("Novo - F2")
         self.btn_salvar = QPushButton("Salvar - F3")
         self.btn_salvar.clicked.connect(self.salvar_produto)
-
         botoes.addWidget(self.btn_novo)
         botoes.addWidget(self.btn_salvar)
         layout.addLayout(botoes)
 
-        self.tabela = QTableWidget()
-        self.tabela.setColumnCount(4)
-        self.tabela.setHorizontalHeaderLabels(["Código", "Descrição", "Fornecedor", "Preço"])
-        layout.addWidget(self.tabela)
+        # TABELA DE PRODUTOS
+        self.tabela_produtos = QTableWidget()
+        self.tabela_produtos.setColumnCount(4)
+        self.tabela_produtos.setHorizontalHeaderLabels(["Código", "Descrição", "Fornecedor", "Preço"])
+        self.tabela_produtos.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.tabela_produtos.horizontalHeader().setStretchLastSection(True)
+        self.tabela_produtos.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+
+
+        layout.addWidget(self.tabela_produtos)
+
+        # Conectar o clique duplo da tabela à função de edição
+        self.tabela_produtos.cellDoubleClicked.connect(self.editar_estoque)
 
         self.setLayout(layout)
         self.setStyleSheet("""
@@ -83,6 +115,7 @@ class CadastroProdutoWindow(QDialog):
             QLabel { font-weight: bold; }
             QPushButton { background-color: #023E8A; color: white; padding: 6px 12px; border-radius: 6px; }
         """)
+
 
     def carregarImagem(self):
         file, _ = QFileDialog.getOpenFileName(self, "Selecionar Imagem", "", "Imagens (*.png *.jpg *.jpeg)")
@@ -129,16 +162,23 @@ class CadastroProdutoWindow(QDialog):
         try:
             conexao = sqlite3.connect("banco_dados.db")
             cursor = conexao.cursor()
-            cursor.execute("SELECT codigo, descricao, fornecedor, preco_venda FROM produtos")
+            cursor.execute("SELECT codigo, descricao, fornecedor, preco_venda, estoque FROM produtos")
             dados = cursor.fetchall()
             conexao.close()
 
-            self.tabela.setRowCount(0)
+            self.tabela_produtos.setRowCount(0)
+            self.tabela_produtos.setColumnCount(5)
+            self.tabela_produtos.setHorizontalHeaderLabels(["Código", "Descrição", "Fornecedor", "Preço Venda", "Estoque"])
+
             for row_num, row_data in enumerate(dados):
-                self.tabela.insertRow(row_num)
-                for col_num, col_data in enumerate(row_data):
-                    self.tabela.setItem(row_num, col_num, QTableWidgetItem(str(col_data)))
+                self.tabela_produtos.insertRow(row_num)
+                for col_num, data in enumerate(row_data):
+                    self.tabela_produtos.setItem(row_num, col_num, QTableWidgetItem(str(data)))
 
         except Exception as e:
-            QMessageBox.critical(self, "Erro", f"Erro ao carregar tabela: {str(e)}")
+            QMessageBox.critical(self, "Erro", f"Ocorreu um erro ao carregar os produtos: {str(e)}")
+
+
+
+
 

@@ -6,33 +6,40 @@ from PyQt5.QtWidgets import (QApplication, QDialog, QLabel, QLineEdit, QPushButt
 from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt, QDateTime
 from PyQt5.QtGui import QDoubleValidator
-
-
+from PyQt5.QtGui import QColor
 class PagamentoDialog(QDialog):
     def __init__(self, total, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Forma de Pagamento")
-        self.total = total
+        self.total = total  # Total sem desconto
+        self.total_com_desconto = total  # Total com desconto
         self.metodo = None
 
-        self.setFixedSize(300, 200)
-
+        self.setFixedSize(300, 260)
         layout = QVBoxLayout()
 
         # Total
         self.label_total = QLabel(f"Total a pagar: R$ {self.total:.2f}")
         layout.addWidget(self.label_total)
 
+        # Campo de desconto
+        self.label_desconto = QLabel("Desconto (% ou R$):")
+        self.input_desconto = QLineEdit()
+        self.input_desconto.setPlaceholderText("Digite valor ou %")
+        layout.addWidget(self.label_desconto)
+        layout.addWidget(self.input_desconto)
+
         # Combo de pagamento
+        layout.addWidget(QLabel("Forma de Pagamento:"))
         self.combo_pagamento = QComboBox()
         self.combo_pagamento.addItems(["Dinheiro", "Cartão de Crédito", "Cartão de Débito", "PIX"])
-        layout.addWidget(QLabel("Forma de Pagamento:"))
         layout.addWidget(self.combo_pagamento)
 
         # Campo valor recebido (apenas para dinheiro)
+        self.label_recebido = QLabel("Valor Recebido:")
         self.input_dinheiro = QLineEdit()
-        self.input_dinheiro.setPlaceholderText("Valor recebido")
         self.input_dinheiro.setValidator(QDoubleValidator(0.0, 100000.0, 2))
+        layout.addWidget(self.label_recebido)
         layout.addWidget(self.input_dinheiro)
 
         # Label troco
@@ -48,18 +55,58 @@ class PagamentoDialog(QDialog):
         # Conexões
         self.combo_pagamento.currentTextChanged.connect(self.on_metodo_pagamento_changed)
         self.btn_confirmar.clicked.connect(self.confirmar_pagamento)
+        self.input_dinheiro.textChanged.connect(self.atualizar_troco)
+        self.input_desconto.textChanged.connect(self.atualizar_total_com_desconto)
 
-        # Preenche valor inicial se for dinheiro
+        # Inicializa
         self.on_metodo_pagamento_changed(self.combo_pagamento.currentText())
 
     def on_metodo_pagamento_changed(self, metodo):
         if metodo == "Dinheiro":
-            self.input_dinheiro.setText(f"{self.total:.2f}")
+            self.label_recebido.setVisible(True)
+            self.input_dinheiro.setVisible(True)
             self.input_dinheiro.setEnabled(True)
-        else:
             self.input_dinheiro.clear()
-            self.input_dinheiro.setEnabled(False)
             self.label_troco.setText("Troco: R$ 0.00")
+        else:
+            self.label_recebido.setVisible(False)
+            self.input_dinheiro.setVisible(False)
+            self.label_troco.setText("Troco: R$ 0.00")
+
+    def atualizar_troco(self):
+        if self.combo_pagamento.currentText() != "Dinheiro":
+            return
+
+        texto_valor = self.input_dinheiro.text().replace(",", ".").replace("R$", "").strip()
+        try:
+            valor_recebido = float(texto_valor)
+            troco = valor_recebido - self.total_com_desconto
+            if troco < 0:
+                troco = 0.0
+            self.label_troco.setText(f"Troco: R$ {troco:.2f}")
+        except ValueError:
+            self.label_troco.setText("Troco: R$ 0.00")
+
+    def atualizar_total_com_desconto(self):
+        texto_desconto = self.input_desconto.text().replace(",", ".").strip()
+
+        if not texto_desconto:
+            self.total_com_desconto = self.total
+            self.label_total.setText(f"Total a pagar: R$ {self.total:.2f}")
+            return
+
+        try:
+            if "%" in texto_desconto:
+                percentual = float(texto_desconto.replace("%", "").strip())
+                desconto = self.total * (percentual / 100)
+            else:
+                desconto = float(texto_desconto)
+            self.total_com_desconto = self.total - desconto
+            if self.total_com_desconto < 0:
+                self.total_com_desconto = 0
+            self.label_total.setText(f"Total a pagar: R$ {self.total_com_desconto:.2f}")
+        except ValueError:
+            self.label_total.setText(f"Total a pagar: R$ {self.total:.2f}")
 
     def confirmar_pagamento(self):
         metodo = self.combo_pagamento.currentText()
@@ -67,15 +114,13 @@ class PagamentoDialog(QDialog):
         if metodo == "Dinheiro":
             texto_valor = self.input_dinheiro.text().replace(",", ".").replace("R$", "").strip()
             if not texto_valor:
-                QMessageBox.warning(self, "Erro", "Digite um valor válido.")
+                QMessageBox.warning(self, "Erro", "Digite o valor recebido.")
                 return
             try:
                 valor_recebido = float(texto_valor)
-                if valor_recebido < self.total:
+                if valor_recebido < self.total_com_desconto:
                     QMessageBox.warning(self, "Valor insuficiente", "O valor recebido é menor que o total da venda.")
                     return
-                troco = valor_recebido - self.total
-                self.label_troco.setText(f"Troco: R$ {troco:.2f}")
             except ValueError:
                 QMessageBox.warning(self, "Erro", "Digite um valor válido.")
                 return
@@ -155,13 +200,25 @@ class TelaVendas(QDialog):
         self.setLayout(self.layout_principal)
 
     def carregar_produtos(self):
-        self.cursor.execute("SELECT descricao, preco_venda FROM produtos")
+        self.cursor.execute("SELECT descricao, preco_venda, estoque FROM produtos")
         produtos = self.cursor.fetchall()
         self.tabela_produtos.setRowCount(0)
-        for linha, (descricao, preco) in enumerate(produtos):
+        self.tabela_produtos.setColumnCount(3)
+        self.tabela_produtos.setHorizontalHeaderLabels(["Descrição", "Preço", "Estoque"])
+
+        for linha, (descricao, preco, estoque) in enumerate(produtos):
             self.tabela_produtos.insertRow(linha)
             self.tabela_produtos.setItem(linha, 0, QTableWidgetItem(descricao))
             self.tabela_produtos.setItem(linha, 1, QTableWidgetItem(f"R$ {preco:.2f}"))
+            self.tabela_produtos.setItem(linha, 2, QTableWidgetItem(str(estoque)))
+            
+            item_estoque = QTableWidgetItem(str(estoque))
+            # Se o estoque for menor que 5, pintar de vermelho
+            if estoque < 5:
+                item_estoque.setBackground(QColor("#d32f2f"))   # vermelho
+                item_estoque.setForeground(QColor("white"))     # texto branco
+
+            self.tabela_produtos.setItem(linha, 2, item_estoque)
 
     def preparar_autocompletar(self):
         self.cursor.execute("SELECT descricao, descricao FROM produtos")
@@ -184,17 +241,30 @@ class TelaVendas(QDialog):
             return
 
         if not nome_ou_descricao:
-            QMessageBox.warning(self, "Erro", "Digite o descricao ou descrição do produto.")
+            QMessageBox.warning(self, "Erro", "Digite a descrição do produto.")
             return
 
         self.cursor.execute("""
-            SELECT descricao, preco_venda FROM produtos 
+            SELECT descricao, preco_venda, estoque FROM produtos 
             WHERE descricao LIKE ? OR descricao LIKE ?
         """, (f"%{nome_ou_descricao}%", f"%{nome_ou_descricao}%"))
         resultado = self.cursor.fetchone()
 
         if resultado:
-            descricao, preco_unit = resultado
+            descricao, preco_unit, estoque_disponivel = resultado
+
+            if estoque_disponivel <= 0:
+                QMessageBox.warning(self, "Estoque Zerado",
+                                    f"O produto '{descricao}' está com estoque zerado.")
+                return
+
+            if quantidade > estoque_disponivel:
+                QMessageBox.warning(self, "Estoque Insuficiente",
+                                    f"Estoque disponível para '{descricao}': {estoque_disponivel}\n"
+                                    f"Quantidade solicitada: {quantidade}")
+                return
+
+            # Tudo certo, agora pode calcular e adicionar
             total_item = preco_unit * quantidade
 
             linha = self.tabela_venda.rowCount()
@@ -211,6 +281,7 @@ class TelaVendas(QDialog):
         else:
             QMessageBox.warning(self, "Erro", "Produto não encontrado.")
 
+
     def finalizar_venda(self):
         if self.total == 0:
             QMessageBox.information(self, "Aviso", "Nenhum item adicionado à venda.")
@@ -226,17 +297,34 @@ class TelaVendas(QDialog):
                 INSERT INTO vendas (data, hora, total, forma_pagamento)
                 VALUES (?, ?, ?, ?)
             """, (data, hora, self.total, metodo))
-
             id_venda = self.cursor.lastrowid
 
             for row in range(self.tabela_venda.rowCount()):
                 descricao = self.tabela_venda.item(row, 0).text()
                 qtd = int(self.tabela_venda.item(row, 1).text())
                 preco_unit = float(self.tabela_venda.item(row, 2).text().replace("R$", "").strip())
-                self.cursor.execute("SELECT id FROM produtos WHERE descricao = ?", (descricao,))
+                
+                self.cursor.execute("SELECT id, estoque FROM produtos WHERE descricao = ?", (descricao,))
                 resultado = self.cursor.fetchone()
+
                 if resultado:
-                    produto_id = resultado[0]
+                    produto_id, estoque_atual = resultado
+
+                    if qtd > estoque_atual:
+                        QMessageBox.warning(self, "Estoque insuficiente",
+                            f"O produto '{descricao}' possui apenas {estoque_atual} unidade(s) em estoque.\n"
+                            f"Tente reduzir a quantidade ou reponha o estoque.")
+                        self.conn.rollback()
+                        return
+
+                    # Atualiza o estoque
+                    novo_estoque = estoque_atual - qtd
+                    self.cursor.execute("""
+                        UPDATE produtos SET estoque = ? WHERE id = ?
+                    """, (novo_estoque, produto_id))
+
+
+                    # Salva item da venda
                     self.cursor.execute("""
                         INSERT INTO itens_venda (venda_id, produto_id, quantidade, preco_unit)
                         VALUES (?, ?, ?, ?)
@@ -248,8 +336,8 @@ class TelaVendas(QDialog):
             self.tabela_venda.setRowCount(0)
             self.total = 0.0
             self.label_total.setText("Total: R$ 0.00")
+            self.carregar_produtos()  # ← ATUALIZA A LISTA DE PRODUTOS COM ESTOQUE NOVO
 
-    
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
