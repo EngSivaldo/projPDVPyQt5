@@ -1,212 +1,278 @@
 import sys
-import os
 import sqlite3
-from PyQt5.QtWidgets import (QApplication, QDialog, QLabel, QLineEdit, QPushButton, QFileDialog, 
-                             QVBoxLayout, QHBoxLayout, QFormLayout, QComboBox, QDateEdit, QTextEdit, QDoubleSpinBox, QCheckBox, QWidget, QGridLayout)
-from PyQt5.QtGui import QPixmap, QFont
-from PyQt5.QtCore import Qt, QDate
 
-class CadastroClientes(QDialog):
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget,
+    QHBoxLayout, QToolButton, QDialog, QMessageBox, QSpacerItem, QSizePolicy, QSplashScreen
+)
+from PyQt5.QtGui import QIcon, QPixmap, QFont, QPainter, QBrush, QColor
+from PyQt5.QtCore import Qt, QSize, QPropertyAnimation, QPoint, QEasingCurve, QTimer
+
+# Importações das janelas reais do sistema
+from clientes import CadastroClientes
+from cadastro_produtos import CadastroProdutoWindow
+from tela_vendas import TelaVendas
+from fornecedor import TelaCadastroFornecedores
+from historico_vendas import HistoricoVendas
+from FluxoCaixa import FluxoCaixa
+from contas_pagar import ContasPagar
+from contas_receber import ContasReceber
+from fechar_caixa import TelaFecharCaixa
+from tela_impressoras import TelaImpressoras
+from etiquetas.selecao_modelo import SelecaoModeloEtiqueta
+from configuracoes import TelaConfiguracoes
+from backup_dados import BackupWindow
+from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
+from PyQt5.QtCore import QUrl
+
+import shutil
+import datetime
+import os
+
+def backup_banco():
+    pasta_backup = os.path.join(os.path.dirname(__file__), "backups")
+    os.makedirs(pasta_backup, exist_ok=True)
+
+    caminho_original = os.path.join(os.path.dirname(__file__), "banco_dados.db")
+    data = datetime.datetime.now().strftime("%Y%m%d")
+    caminho_backup = os.path.join(pasta_backup, f"backup_banco_dados_{data}.db")
+
+    if os.path.exists(caminho_original) and not os.path.exists(caminho_backup):
+        shutil.copy2(caminho_original, caminho_backup)
+        print(f"🛡️ Backup criado: {caminho_backup}")
+    else:
+        print("📁 Backup já existe para hoje.")
+
+#   # Limpa backups com mais de 7 dias de idade
+def limpar_backups_antigos(dias=7):
+    pasta_backup = os.path.join(os.path.dirname(__file__), "backups")
+    if not os.path.exists(pasta_backup):
+        return
+
+    agora = datetime.datetime.now()
+    for nome in os.listdir(pasta_backup):
+        caminho = os.path.join(pasta_backup, nome)
+        if os.path.isfile(caminho):
+            modificado = datetime.datetime.fromtimestamp(os.path.getmtime(caminho))
+            if (agora - modificado).days > dias:
+                os.remove(caminho)
+                print(f"🗑️ Backup antigo removido: {nome}")
+
+
+class GradientBackground(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Cadastro de Clientes")
-        self.setStyleSheet("background-color: #007ACC; color: white;")
-        self.setMinimumWidth(1000)
+        self.setAutoFillBackground(True)
+           # Cria backup do banco logo na inicialização do sistema
+        backup_banco()
 
-        self.conexao = sqlite3.connect("banco_daods.db")
-        self.cursor = self.conexao.cursor()
-        self.criar_tabela()
-                # No início do __init__ (antes de criar widgets), adicione:
-        # self.setStyleSheet("""
-        #     QLabel {
-        #         color: blue;
-        #         font-size: 14px;
-        #     }
-        #     QLineEdit, QComboBox, QDateEdit, QDoubleSpinBox, QTextEdit {
-        #         background-color: white;
-        #         color: black;
-        #         border: 1px solid gray;
-        #         border-radius: 5px;
-        #         padding: 3px;
-        #         font-size: 13px;
-        #     }
-        #     QPushButton {
-        #         font-weight: bold;
-        #         font-size: 13px;
-        #         border-radius: 6px;
-        #         padding: 6px;
-        #     }
-        #     QPushButton:hover {
-        #         background-color: #0055aa;
-        #     }
-        #     QTextEdit {
-        #         background-color: white;
-        #         border: 1px solid gray;
-        #         border-radius: 5px;
-        #     }
-        # """)
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        gradient = QBrush(QColor(15, 108, 191), Qt.SolidPattern)
+        painter.fillRect(self.rect(), gradient)
 
+class MainPDVWindow(QMainWindow):
+    def __init__(self, versao_teste=False, usuario_logado="Usuário", codigo_usuario="000"):
+        super().__init__()
+        self.versao_teste = versao_teste
+        self.usuario_logado = usuario_logado
+        self.codigo_usuario = codigo_usuario
 
-        # ====== INPUTS EM GRELHA À ESQUERDA ======
-        form_widget = QWidget()
-        form_layout = QGridLayout()
-        input_style = """
-            background-color: white;
-            color: black;
-            min-height: 25px;
-            max-width: 250px;
-            border-radius: 4px;
-            padding-left: 4px;
-        """
+        self.setWindowTitle("SYSON PDV PRÓ")
+        self.setGeometry(100, 100, 1366, 768)
+        self.setStyleSheet("color: white;")
 
+        self.init_ui()
+        self.init_database()
+        
+         # Reproduzir som ao abrir a janela
+        self.tocar_musica_intro()
 
-        self.codigo_input = QLineEdit(); self.codigo_input.setStyleSheet(input_style)
-        self.nome_input = QLineEdit(); self.nome_input.setStyleSheet(input_style)
-        self.sexo_input = QComboBox(); self.sexo_input.addItems(["", "FEMININO", "MASCULINO"]); self.sexo_input.setStyleSheet(input_style)
-        self.cpf_input = QLineEdit(); self.cpf_input.setStyleSheet(input_style)
-        self.rg_input = QLineEdit(); self.rg_input.setStyleSheet(input_style)
-        self.cep_input = QLineEdit(); self.cep_input.setStyleSheet(input_style)
-        self.bairro_input = QLineEdit(); self.bairro_input.setStyleSheet(input_style)
-        self.nasc_input = QDateEdit(); self.nasc_input.setCalendarPopup(True); self.nasc_input.setDate(QDate.currentDate()); self.nasc_input.setStyleSheet(input_style)
-        self.cel_input = QLineEdit(); self.cel_input.setStyleSheet(input_style)
-        self.email_input = QLineEdit(); self.email_input.setStyleSheet(input_style)
-        self.estado_civil_input = QComboBox(); self.estado_civil_input.addItems(["", "SOLTEIRO", "CASADO", "DIVORCIADO"]); self.estado_civil_input.setStyleSheet(input_style)
-        self.endereco_input = QLineEdit(); self.endereco_input.setStyleSheet(input_style)
-        self.cidade_input = QLineEdit(); self.cidade_input.setStyleSheet(input_style)
-        self.uf_input = QComboBox(); self.uf_input.addItems(["", "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"]); self.uf_input.setStyleSheet(input_style)
-        self.telefone_input = QLineEdit(); self.telefone_input.setStyleSheet(input_style)
-        self.cadastro_input = QDateEdit(); self.cadastro_input.setCalendarPopup(True); self.cadastro_input.setDate(QDate.currentDate()); self.cadastro_input.setStyleSheet(input_style)
-        self.tipo_cliente_input = QComboBox(); self.tipo_cliente_input.addItems(["", "ATACADO", "VAREJO", "DESATIVADO"]); self.tipo_cliente_input.setStyleSheet(input_style)
-        self.limite_input = QDoubleSpinBox(); self.limite_input.setMaximum(999999.99); self.limite_input.setStyleSheet(input_style)
-        self.disponivel_input = QDoubleSpinBox(); self.disponivel_input.setMaximum(999999.99); self.disponivel_input.setStyleSheet(input_style)
-        self.controlar_input = QComboBox(); self.controlar_input.addItems(["NÃO", "SIM"]); self.controlar_input.setStyleSheet(input_style)
-        self.obs_input = QTextEdit(); self.obs_input.setStyleSheet("max-width: 250px;")
+    def tocar_musica_intro(self):
+        from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
+        from PyQt5.QtCore import QUrl
+        import os
 
-        campos = [
-            ("Código", self.codigo_input), ("descricao", self.nome_input),
-            ("Sexo", self.sexo_input), ("CPF/CNPJ", self.cpf_input),
-            ("RG/IE", self.rg_input), ("CEP", self.cep_input),
-            ("Bairro", self.bairro_input), ("Data de Nasc", self.nasc_input),
-            ("Celular", self.cel_input), ("E-mail", self.email_input),
-            ("Estado Civil", self.estado_civil_input), ("Endereço", self.endereco_input),
-            ("Cidade", self.cidade_input), ("UF", self.uf_input),
-            ("Telefone", self.telefone_input), ("Data Cadastro", self.cadastro_input),
-            ("Tipo de Preço do Cliente", self.tipo_cliente_input), ("Limite Crédito", self.limite_input),
-            ("Limite Disponível", self.disponivel_input), ("Controlar limite", self.controlar_input),
-            ("Observação", self.obs_input)
+        self.player = QMediaPlayer()
+        caminho_absoluto = os.path.abspath("sons/musica_intro.mp3")
+        url = QUrl.fromLocalFile(caminho_absoluto)
+        media = QMediaContent(url)
+        self.player.setMedia(media)
+        self.player.setVolume(50)
+        self.player.play()
+
+    def animar_logo(self):
+        self.animacao = QPropertyAnimation(self.logo, b"pos")
+        self.animacao.setDuration(3000)
+        self.animacao.setStartValue(QPoint(self.logo.x(), self.logo.y()))
+        self.animacao.setEndValue(QPoint(self.logo.x(), self.logo.y() + 15))
+        self.animacao.setLoopCount(-1)
+        self.animacao.setEasingCurve(QEasingCurve.InOutQuad)
+        self.animacao.start()
+
+    def init_ui(self):
+        bg = GradientBackground()
+        self.setCentralWidget(bg)
+
+        main_layout = QVBoxLayout(bg)
+        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(10, 10, 10, 10)
+
+        # BARRA DE MENU
+        menu_layout = QHBoxLayout()
+        botoes = [
+            ("PRODUTOS", "imagens/produtos.png", self.abrir_tela_produtos),
+            ("CLIENTES", "imagens/clientes.png", self.abrir_tela_clientes),
+            ("FORNECEDOR", "imagens/fornecedor.png", self.abrir_tela_fornecedor),
+            ("HIST VENDAS", "imagens/historico_vendas.png", self.abrir_tela_historico_vendas),
+            ("FLUXO DE CAIXA", "imagens/fluxo_caixa.png", self.abrir_tela_fluxo_caixa),
+            ("C. A PAGAR", "imagens/contas_pagar.png", self.abrir_tela_contas_pagar),
+            ("C. A RECEBER", "imagens/contas_receber.png", self.abrir_tela_contas_receber),
+            ("VENDAS", "imagens/vendas.png", self.abrir_tela_vendas),
+            ("FECHAR CAIXA", "imagens/fechar_caixa.png", self.abrir_tela_fechar_caixa),
+            ("IMPRESSORAS", "imagens/impressora.png", self.abrir_tela_impressoras),
+            ("BACKUP", "imagens/backup.png", self.abrir_tela_backup),
+            ("ETIQUETAS", "imagens/etiquetas.png", self.abrir_tela_etiquetas),
+            ("LOGOUT", "imagens/logout.png", self.logout)
         ]
 
-        for i, (label, widget) in enumerate(campos):
-            row, col = divmod(i, 2)
-            form_layout.addWidget(QLabel(label), row, col * 2)
-            form_layout.addWidget(widget, row, col * 2 + 1)
+        for descricao, icone_path, acao in botoes:
+            btn = QToolButton()
+            btn.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+            btn.setIcon(QIcon(icone_path))
+            btn.setText(descricao)
+            btn.setIconSize(QSize(48, 48))
+            btn.setFixedSize(100, 85)
+            btn.setStyleSheet("""
+                QToolButton {
+                    background-color: rgba(255, 255, 255, 0.1);
+                    color: white;
+                    font-size: 10px;
+                    font-weight: bold;
+                    padding: 8px;
+                    border-radius: 10px;
+                }
+                QToolButton:hover {
+                    background-color: rgba(255, 255, 255, 0.3);
+                    color: #ffcc00;
+                }
+            """)
+            btn.clicked.connect(acao)
+            menu_layout.addWidget(btn)
 
-        form_widget.setLayout(form_layout)
+        main_layout.addLayout(menu_layout)
+        main_layout.addSpacing(30)
 
-        # ====== IMAGEM À DIREITA ======
-        self.foto_label = QLabel()
-        self.foto_label.setFixedSize(260, 260)
-        self.foto_label.setStyleSheet("background-color: white; border: 1px solid gray; border-radius: 10px;")
-        self.foto_label.setAlignment(Qt.AlignCenter)
+        # LOGO CENTRALIZADA COM EFEITO
+        logo_container = QWidget()
+        logo_layout = QVBoxLayout(logo_container)
+        logo_layout.setContentsMargins(0, 0, 0, 0)
+        self.logo = QLabel()
+        pixmap = QPixmap("imagens/imgChatGPT.png")
+        self.logo.setPixmap(pixmap.scaled(1000, 620, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        self.logo.setAlignment(Qt.AlignCenter)
+        self.logo.setStyleSheet("border: none; margin: 0 auto;")
+        logo_layout.addWidget(self.logo, alignment=Qt.AlignCenter)
+        main_layout.addWidget(logo_container, alignment=Qt.AlignCenter)
+        self.animar_logo()
 
-        self.adicionar_foto_btn = QPushButton("Adicionar Foto - F7")
-        self.adicionar_foto_btn.setStyleSheet("background-color: #0099FF; color: white;")
-        self.adicionar_foto_btn.clicked.connect(self.selecionar_foto)
+        # EXPANSOR
+        main_layout.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
-        self.remover_foto_btn = QPushButton("Remover foto")
-        self.remover_foto_btn.setStyleSheet("background-color: #CC3333; color: white;")
-        self.remover_foto_btn.clicked.connect(self.remover_foto)
-
-        foto_layout = QVBoxLayout()
-        foto_layout.addWidget(self.foto_label)
-        foto_layout.addWidget(self.adicionar_foto_btn)
-        foto_layout.addWidget(self.remover_foto_btn)
-
-        # ====== BOTÕES INFERIORES ======
-        self.salvar_btn = QPushButton("Salvar - F3")
-        self.salvar_btn.setStyleSheet("background-color: #0055CC; color: white; padding: 10px; border-radius: 8px;")
-        self.salvar_btn.clicked.connect(self.salvar_cliente)
-
-        # ====== LAYOUT PRINCIPAL ======
-        layout_principal = QHBoxLayout()
-        layout_principal.addWidget(form_widget, 3)
-        layout_principal.addLayout(foto_layout, 1)
-
-        main_layout = QVBoxLayout()
-        main_layout.addLayout(layout_principal)
-        main_layout.addWidget(self.salvar_btn)
-
-        self.setLayout(main_layout)
-
-    def criar_tabela(self):
-        self.cursor.execute('''CREATE TABLE IF NOT EXISTS clientes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            codigo TEXT, descricao TEXT, sexo TEXT, cpf TEXT, rg TEXT, cep TEXT, bairro TEXT,
-            nasc TEXT, celular TEXT, email TEXT, estado_civil TEXT, endereco TEXT,
-            cidade TEXT, uf TEXT, telefone TEXT, cadastro TEXT, tipo_cliente TEXT,
-            limite REAL, disponivel REAL, controlar_limite TEXT, observacao TEXT,
-            foto TEXT
-        )''')
-        self.conexao.commit()
-
-    def selecionar_foto(self):
-        file_name, _ = QFileDialog.getOpenFileName(self, "Selecionar Foto", "", "Imagens (*.png *.jpg *.bmp)")
-        if file_name:
-            pixmap = QPixmap(file_name).scaled(260, 260, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            self.foto_label.setPixmap(pixmap)
-            self.foto_path = file_name
-
-    def remover_foto(self):
-        self.foto_label.clear()
-        self.foto_path = ""
-
-    def salvar_cliente(self):
-        descricao = self.nome_input.text()
-        cpf = self.cpf_input.text()
-        email = self.email_input.text()
-
-        if not descricao:
-            self.nome_input.setStyleSheet("border: 2px solid red;")
-            return
-
-        dados = (
-            self.codigo_input.text(),
-            descricao,
-            self.sexo_input.currentText(),
-            cpf,
-            self.rg_input.text(),
-            self.cep_input.text(),
-            self.bairro_input.text(),
-            self.nasc_input.date().toString("yyyy-MM-dd"),
-            self.cel_input.text(),
-            email,
-            self.estado_civil_input.currentText(),
-            self.endereco_input.text(),
-            self.cidade_input.text(),
-            self.uf_input.currentText(),
-            self.telefone_input.text(),
-            self.cadastro_input.date().toString("yyyy-MM-dd"),
-            self.tipo_cliente_input.currentText(),
-            self.limite_input.value(),
-            self.disponivel_input.value(),
-            self.controlar_input.currentText(),
-            self.obs_input.toPlainText(),
-            getattr(self, 'foto_path', '')
+        # RODAPÉ ESTILIZADO
+        rodape = QLabel(
+            f"<b>SYSON PDV PRÓ</b> | descricao da Empresa | Usuário: <i>{self.usuario_logado}</i> | Código: {self.codigo_usuario}"
         )
+        rodape.setAlignment(Qt.AlignCenter)
+        rodape.setStyleSheet("""
+            background-color: rgba(0, 0, 0, 0.4);
+            color: white;
+            padding: 12px;
+            font-size: 12px;
+            font-family: 'Segoe UI', sans-serif;
+        """)
+        main_layout.addWidget(rodape)
 
+    def abrir_tela_vendas(self): TelaVendas().exec_()
+    def abrir_tela_produtos(self): CadastroProdutoWindow().exec_()
+    def abrir_tela_clientes(self): CadastroClientes().exec_()
+    def abrir_tela_fornecedor(self): TelaCadastroFornecedores().exec_()
+    def abrir_tela_historico_vendas(self): HistoricoVendas().exec_()
+    def abrir_tela_fluxo_caixa(self): FluxoCaixa().exec_()
+    def abrir_tela_contas_pagar(self): ContasPagar().exec_()
+    def abrir_tela_contas_receber(self): ContasReceber().exec_()
+    def abrir_tela_fechar_caixa(self): TelaFecharCaixa().exec_()
+    def abrir_tela_impressoras(self): TelaImpressoras().exec_()
+    def abrir_tela_backup(self): BackupWindow().exec_()
+    def abrir_tela_etiquetas(self): SelecaoModeloEtiqueta().exec_()
+
+    def animar_logo(self):
+        self.animacao = QPropertyAnimation(self.logo, b"pos")
+        self.animacao.setDuration(2000)
+        self.animacao.setStartValue(QPoint(self.logo.x(), self.logo.y()))
+        self.animacao.setEndValue(QPoint(self.logo.x(), self.logo.y() + 30))
+        self.animacao.setLoopCount(-1)
+        self.animacao.setEasingCurve(QEasingCurve.InOutSine)  # movimento suave
+        self.animacao.setDirection(QPropertyAnimation.Forward)
+        self.animacao.start()
+        
+    def tocar_musica_fundo(self):
+        self.player = QMediaPlayer()
+        url = QUrl.fromLocalFile("sons/musica_intro.mp3")  # Substitua com o caminho correto
+        self.player.setMedia(QMediaContent(url))
+        self.player.setVolume(50)  # Volume de 0 a 100
+        self.player.play()
+
+
+
+
+    def logout(self):
+        resposta = QMessageBox.question(
+            self, "Confirmação de Logout", "Tem certeza que deseja sair do sistema?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if resposta == QMessageBox.Yes:
+            self.close()
+
+    def init_database(self):
+        self.conn = sqlite3.connect("banco_dados.db")
+        self.cursor = self.conn.cursor()
         self.cursor.execute("""
-            INSERT INTO clientes (
-                codigo, descricao, sexo, cpf, rg, cep, bairro, nasc, celular, email,
-                estado_civil, endereco, cidade, uf, telefone, cadastro, tipo_cliente,
-                limite, disponivel, controlar_limite, observacao, foto
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, dados)
+            CREATE TABLE IF NOT EXISTS produtos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                codigo TEXT,
+                descricao TEXT,
+                fornecedor TEXT,
+                unidade TEXT,
+                preco_compra REAL,
+                preco_venda REAL
+            )
+        """)
+        self.conn.commit()
+        self.tocar_musica_fundo()
 
-        self.conexao.commit()
-        self.close()
+        
+    
+    
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app = QApplication(sys.argv)
-    janela = CadastroClientes()
-    janela.show()
+
+    # Splash screen
+    splash_pix = QPixmap("imagens/splash.png")
+    splash = QSplashScreen(splash_pix, Qt.WindowStaysOnTopHint)
+    splash.setMask(splash_pix.mask())
+    splash.show()
+
+    # Espera de 3 segundos antes de iniciar a janela principal
+    QTimer.singleShot(3000, splash.close)
+
+    def start_main_window():
+        global main_window  # <- isso mantém a referência viva
+        main_window = MainPDVWindow(versao_teste=True, usuario_logado="Admin", codigo_usuario="001")
+        main_window.show()
+
+
+    QTimer.singleShot(3000, start_main_window)
+
     sys.exit(app.exec_())

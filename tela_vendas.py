@@ -7,6 +7,8 @@ from PyQt5.QtGui import QFont
 from PyQt5.QtCore import Qt, QDateTime
 from PyQt5.QtGui import QDoubleValidator
 from PyQt5.QtGui import QColor
+from TelaRecibo import TelaRecibo
+from TelaCancelarVenda import TelaCancelarVenda
 class PagamentoDialog(QDialog):
     def __init__(self, total, parent=None):
         super().__init__(parent)
@@ -14,6 +16,8 @@ class PagamentoDialog(QDialog):
         self.total = total  # Total sem desconto
         self.total_com_desconto = total  # Total com desconto
         self.metodo = None
+        self.valor_final = total  # 👈 Inicializa o valor final com o total original
+
 
         self.setFixedSize(300, 260)
         layout = QVBoxLayout()
@@ -97,13 +101,19 @@ class PagamentoDialog(QDialog):
 
         try:
             if "%" in texto_desconto:
+                # Desconto por percentual
                 percentual = float(texto_desconto.replace("%", "").strip())
                 desconto = self.total * (percentual / 100)
+                self.total_com_desconto = self.total - desconto
             else:
+                # Desconto em valor fixo (R$)
                 desconto = float(texto_desconto)
-            self.total_com_desconto = self.total - desconto
+                self.total_com_desconto = self.total - desconto
+
+            # Se o total com desconto for menor que zero, colocamos 0.00
             if self.total_com_desconto < 0:
-                self.total_com_desconto = 0
+                self.total_com_desconto = 0.0
+
             self.label_total.setText(f"Total a pagar: R$ {self.total_com_desconto:.2f}")
         except ValueError:
             self.label_total.setText(f"Total a pagar: R$ {self.total:.2f}")
@@ -126,7 +136,9 @@ class PagamentoDialog(QDialog):
                 return
 
         self.metodo = metodo
+        self.valor_final = self.total_com_desconto  # 👈 Adicione isso
         self.accept()
+
 
 
 class TelaVendas(QDialog):
@@ -139,6 +151,7 @@ class TelaVendas(QDialog):
         self.cursor = self.conn.cursor()
 
         self.total = 0.0
+        self.total_com_desconto = 0.0  # Inicializando total_com_desconto
 
         self.layout_principal = QHBoxLayout()
         self.layout_esquerdo = QVBoxLayout()
@@ -180,6 +193,12 @@ class TelaVendas(QDialog):
         self.btn_finalizar.clicked.connect(self.finalizar_venda)
         self.layout_esquerdo.addWidget(self.btn_finalizar)
 
+        # Botão de cancelar venda
+        self.btn_cancelar = QPushButton("Cancelar Venda")
+        self.btn_cancelar.setStyleSheet("background-color: gray; color: white; padding: 10px; font-weight: bold; border-radius: 10px;")
+        self.btn_cancelar.clicked.connect(self.exibir_confirmacao_cancelamento)
+        self.layout_esquerdo.addWidget(self.btn_cancelar)
+
         self.layout_direito = QVBoxLayout()
         self.label_lista = QLabel("PRODUTOS DISPONÍVEIS")
         self.label_lista.setFont(QFont("Arial", 14, QFont.Bold))
@@ -198,6 +217,55 @@ class TelaVendas(QDialog):
         self.layout_principal.addLayout(self.layout_esquerdo, 2)
         self.layout_principal.addLayout(self.layout_direito, 1)
         self.setLayout(self.layout_principal)
+
+    # Função para exibir a confirmação do cancelamento da venda
+    def exibir_confirmacao_cancelamento(self):
+        # Cria a janela de confirmação
+        confirmacao = QDialog(self)
+        confirmacao.setWindowTitle("Confirmar Cancelamento")
+        confirmacao.setFixedSize(400, 300)
+
+        # Layout para a janela de confirmação
+        layout_confirmacao = QVBoxLayout()
+
+        # Exibe os itens da venda
+        lista_itens = "Itens na venda:\n"
+        for row in range(self.tabela_venda.rowCount()):
+            produto = self.tabela_venda.item(row, 0).text()
+            quantidade = self.tabela_venda.item(row, 1).text()
+            preco = self.tabela_venda.item(row, 2).text()
+            total = self.tabela_venda.item(row, 3).text()
+            lista_itens += f"{produto} - Qtd: {quantidade} - Preço: R$ {preco} - Total: R$ {total}\n"
+
+        label_itens = QLabel(lista_itens)
+        layout_confirmacao.addWidget(label_itens)
+
+        # Botões de confirmação
+        botao_cancelar = QPushButton("Confirmar Cancelamento")
+        botao_cancelar.setStyleSheet("background-color: red; color: white; padding: 10px; font-weight: bold; border-radius: 10px;")
+        botao_cancelar.clicked.connect(self.cancelar_venda)
+
+        botao_nao = QPushButton("Manter Venda")
+        botao_nao.setStyleSheet("background-color: green; color: white; padding: 10px; font-weight: bold; border-radius: 10px;")
+        botao_nao.clicked.connect(confirmacao.close)
+
+        layout_confirmacao.addWidget(botao_cancelar)
+        layout_confirmacao.addWidget(botao_nao)
+
+        confirmacao.setLayout(layout_confirmacao)
+        confirmacao.exec_()
+
+    # Função para cancelar a venda
+    def cancelar_venda(self):
+        # Reseta as variáveis e a tabela
+        self.total = 0.0
+        self.total_com_desconto = 0.0
+        self.label_total.setText("Total: R$ 0.00")
+        self.tabela_venda.setRowCount(0)
+        self.input_nome.clear()
+        self.input_quantidade.clear()
+
+        QMessageBox.information(self, "Venda Cancelada", "A venda foi cancelada com sucesso.")
 
     def carregar_produtos(self):
         self.cursor.execute("SELECT descricao, preco_venda, estoque FROM produtos")
@@ -275,35 +343,38 @@ class TelaVendas(QDialog):
             self.tabela_venda.setItem(linha, 3, QTableWidgetItem(f"R$ {total_item:.2f}"))
 
             self.total += total_item
+            self.total_com_desconto = self.total  # Atualizar o total com desconto
             self.label_total.setText(f"Total: R$ {self.total:.2f}")
             self.input_nome.clear()
             self.input_quantidade.clear()
         else:
             QMessageBox.warning(self, "Erro", "Produto não encontrado.")
 
-
     def finalizar_venda(self):
         if self.total == 0:
             QMessageBox.information(self, "Aviso", "Nenhum item adicionado à venda.")
             return
 
-        dialog = PagamentoDialog(self.total)
+        dialog = PagamentoDialog(self.total_com_desconto)  # Passar o total com desconto
         if dialog.exec_() == QDialog.Accepted:
             metodo = dialog.metodo
+            self.total_com_desconto = dialog.valor_final
+            desconto = self.total - self.total_com_desconto  # 👉 Calcular desconto
             data = QDateTime.currentDateTime().toString("yyyy-MM-dd")
             hora = QDateTime.currentDateTime().toString("HH:mm:ss")
 
+            # Inserir venda com todos os valores
             self.cursor.execute("""
-                INSERT INTO vendas (data, hora, total, forma_pagamento)
-                VALUES (?, ?, ?, ?)
-            """, (data, hora, self.total, metodo))
+                INSERT INTO vendas (data, hora, total, desconto, total_com_desconto, forma_pagamento)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (data, hora, self.total, desconto, self.total_com_desconto, metodo))
             id_venda = self.cursor.lastrowid
 
             for row in range(self.tabela_venda.rowCount()):
                 descricao = self.tabela_venda.item(row, 0).text()
                 qtd = int(self.tabela_venda.item(row, 1).text())
                 preco_unit = float(self.tabela_venda.item(row, 2).text().replace("R$", "").strip())
-                
+
                 self.cursor.execute("SELECT id, estoque FROM produtos WHERE descricao = ?", (descricao,))
                 resultado = self.cursor.fetchone()
 
@@ -317,26 +388,54 @@ class TelaVendas(QDialog):
                         self.conn.rollback()
                         return
 
-                    # Atualiza o estoque
                     novo_estoque = estoque_atual - qtd
                     self.cursor.execute("""
                         UPDATE produtos SET estoque = ? WHERE id = ?
                     """, (novo_estoque, produto_id))
 
-
-                    # Salva item da venda
                     self.cursor.execute("""
                         INSERT INTO itens_venda (venda_id, produto_id, quantidade, preco_unit)
                         VALUES (?, ?, ?, ?)
                     """, (id_venda, produto_id, qtd, preco_unit))
 
             self.conn.commit()
+
+            # Dados do recibo
+            dados_recibo = {
+                'data': data,
+                'hora': hora,
+                'metodo': metodo,
+                'total': self.total_com_desconto,
+                'total_bruto': self.total,
+                'desconto': desconto,
+                'itens': []
+            }
+
+            for row in range(self.tabela_venda.rowCount()):
+                item = {
+                    'descricao': self.tabela_venda.item(row, 0).text(),
+                    'quantidade': int(self.tabela_venda.item(row, 1).text()),
+                    'preco_unit': float(self.tabela_venda.item(row, 2).text().replace("R$", "").strip())
+                }
+                dados_recibo['itens'].append(item)
+
+            # Mostrar recibo
+            from TelaRecibo import TelaRecibo
+            recibo = TelaRecibo(dados_recibo)
+            recibo.exec_()
+
+            # Mensagem final
             QMessageBox.information(self, "Venda Concluída",
-                                    f"Venda finalizada com sucesso!\nTotal: R$ {self.total:.2f}\nPagamento: {metodo}")
+                f"Venda finalizada com sucesso!\nTotal: R$ {self.total_com_desconto:.2f}\nPagamento: {metodo}")
+
+            # Resetar a tela
             self.tabela_venda.setRowCount(0)
             self.total = 0.0
+            self.total_com_desconto = 0.0
             self.label_total.setText("Total: R$ 0.00")
-            self.carregar_produtos()  # ← ATUALIZA A LISTA DE PRODUTOS COM ESTOQUE NOVO
+            self.carregar_produtos()
+
+
 
 
 if __name__ == '__main__':

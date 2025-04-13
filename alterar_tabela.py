@@ -1,49 +1,35 @@
+
+
 import sqlite3
 
-# Conecta ao banco de dados correto
-conexao = sqlite3.connect("banco_dados.db")
-cursor = conexao.cursor()
+# Conectar ao banco de dados
+conn = sqlite3.connect('banco_dados.db')
+cursor = conn.cursor()
 
-# Lista das colunas desejadas conforme a interface
-colunas_desejadas = {
-    "codigo": "INTEGER",
-    "nome": "TEXT",
-    "sexo": "TEXT",
-    "cpf": "TEXT",
-    "rg": "TEXT",
-    "cep": "TEXT",
-    "bairro": "TEXT",
-    "nasc": "TEXT",
-    "celular": "TEXT",
-    "email": "TEXT",
-    "estado_civil": "TEXT",
-    "endereco": "TEXT",
-    "cidade": "TEXT",
-    "uf": "TEXT",
-    "telefone": "TEXT",
-    "data_cadastro": "TEXT",
-    "tipo_cliente": "TEXT",
-    "limite": "REAL",
-    "disponivel": "REAL",
-    "controlar_limite": "TEXT",
-    "obs": "TEXT",
-    "foto_path": "TEXT"
-}
+# Criar a tabela 'vendas' se não existir
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS vendas (
+    id INTEGER PRIMARY KEY,
+    data DATE,
+    hora TIME,
+    cliente_id INTEGER,
+    total REAL,
+    forma_pagamento TEXT,
+    observacoes TEXT,
+    desconto REAL DEFAULT 0,
+    total_com_desconto REAL DEFAULT 0,
+    cancelada INTEGER DEFAULT 0
+)
+""")
 
-# Verifica colunas existentes na tabela
-cursor.execute("PRAGMA table_info(clientes)")
-colunas_existentes = [info[1] for info in cursor.fetchall()]
+# Atualizar o valor da coluna 'cancelada'
+cursor.execute("UPDATE vendas SET cancelada = 1 WHERE id = 1")  # Exemplo: alterar o valor para 1 onde id é 1
 
-# Adiciona colunas que ainda não existem
-for coluna, tipo in colunas_desejadas.items():
-    if coluna not in colunas_existentes:
-        try:
-            cursor.execute(f"ALTER TABLE clientes ADD COLUMN {coluna} {tipo}")
-            print(f"✅ Coluna adicionada: {coluna} ({tipo})")
-        except Exception as e:
-            print(f"❌ Erro ao adicionar coluna '{coluna}': {e}")
-    else:
-        print(f"✔️ Coluna já existe: {coluna}")
+# Confirmar as alterações
+conn.commit()
 
-conexao.commit()
-conexao.close()
+# Fechar a conexão
+conn.close()
+
+
+
